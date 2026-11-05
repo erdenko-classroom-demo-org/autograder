@@ -8,7 +8,7 @@ from __future__ import annotations
 import csv
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .config import Course
@@ -183,19 +183,60 @@ def read_roster(course: Course) -> Roster:
 
 # ---------- форма сдачи ----------
 
+_TS_FORMATS = (
+    "%d.%m.%Y %H:%M:%S",        # русская локаль Google: 15.02.2027 22:14:03
+    "%Y/%m/%d %I:%M:%S %p",     # английская локаль: 2026/11/05 4:51:18 PM (пояс отрезаем ниже)
+    "%Y/%m/%d %H:%M:%S",
+    "%m/%d/%Y %H:%M:%S",        # американская: 02/15/2027 22:14:03
+    "%m/%d/%Y %I:%M:%S %p",
+    "%Y-%m-%d %H:%M:%S",
+    "%d.%m.%Y %H:%M",
+    "%d/%m/%Y %H:%M:%S",
+)
+
+
 def _parse_form_timestamp(value: str, course: Course) -> datetime:
-    s = value.strip()
-    for fmt in (course.form_timestamp_format, "%d.%m.%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S", "%m/%d/%Y %H:%M:%S", "%d.%m.%Y %H:%M"):
+    """Время из выгрузки Google Forms в любом из известных форматов -> aware datetime в поясе курса.
+
+    Хвост вида 'GMT+3' / 'UTC+03:00' учитывается как смещение; без него время считается временем курса.
+    """
+    s = re.sub(r"\s+", " ", value.strip())
+    tz = course.tz
+    m = re.search(r"\s*(?:GMT|UTC)\s*([+-])(\d{1,2})(?::?(\d{2}))?$", s, re.I)
+    if m:
+        sign = 1 if m.group(1) == "+" else -1
+        tz = timezone(sign * timedelta(hours=int(m.group(2)), minutes=int(m.group(3) or 0)))
+        s = s[:m.start()].strip()
+    formats = (course.form_timestamp_format,) + tuple(f for f in _TS_FORMATS if f != course.form_timestamp_format)
+    for fmt in formats:
         try:
-            return datetime.strptime(s, fmt).replace(tzinfo=course.tz)
+            return datetime.strptime(s, fmt).replace(tzinfo=tz).astimezone(course.tz)
         except ValueError:
             continue
     dt = datetime.fromisoformat(s)
-    return dt if dt.tzinfo else dt.replace(tzinfo=course.tz)
+    return (dt if dt.tzinfo else dt.replace(tzinfo=tz)).astimezone(course.tz)
 
 
 def _assignment_matches(cell: str, assignment_id: str) -> bool:
     return re.search(rf"(?<![a-z0-9]){re.escape(assignment_id.lower())}(?![a-z0-9])", cell.lower()) is not None
+
+
+# Как Google Forms называет служебные колонки в разных локалях
+COLUMN_ALIASES = {
+    "timestamp": ["Отметка времени", "Timestamp"],
+    "email": ["Адрес электронной почты", "Имя пользователя", "Email Address", "Email address", "Username"],
+}
+
+
+def _effective_columns(cols: dict, header: list[str]) -> dict:
+    eff = dict(cols)
+    for key, aliases in COLUMN_ALIASES.items():
+        if eff.get(key) not in header:
+            for alias in aliases:
+                if alias in header:
+                    eff[key] = alias
+                    break
+    return eff
 
 
 def read_submissions(course: Course, csv_path: Path, roster: Roster | None = None,
@@ -218,6 +259,7 @@ def read_submissions(course: Course, csv_path: Path, roster: Roster | None = Non
     with csv_path.open(encoding="utf-8-sig", newline="") as f:
         reader = csv.DictReader(f)
         header = [h.strip() for h in (reader.fieldnames or [])]
+        cols = _effective_columns(cols, header)
         for key in ("timestamp", "repo"):
             if cols[key] not in header:
                 raise ValueError(f"В выгрузке формы нет колонки '{cols[key]}' (ключ {key}); есть: {header}")

@@ -79,3 +79,18 @@ def test_token_similarity_ignores_renames():
     assert similarity(normalize_tokens(a), normalize_tokens(b)) > 0.95
     # на крошечных фрагментах базовое сходство высокое (мало разных токенов); важно, что оно заметно ниже
     assert similarity(normalize_tokens(a), normalize_tokens(c)) < 0.7
+
+
+def test_form_timestamp_formats():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from autograder.submissions import _parse_form_timestamp
+
+    course = Course(name="c")
+    msk = ZoneInfo("Europe/Moscow")
+    assert _parse_form_timestamp("2026/11/05 4:51:18 PM GMT+3", course) == datetime(2026, 11, 5, 16, 51, 18, tzinfo=msk)
+    assert _parse_form_timestamp("2026/11/05 4:51:18 PM GMT+5", course) == datetime(2026, 11, 5, 14, 51, 18, tzinfo=msk)
+    assert _parse_form_timestamp("15.02.2027 22:14:03", course) == datetime(2027, 2, 15, 22, 14, 3, tzinfo=msk)
+    assert _parse_form_timestamp("02/15/2027 22:14:03", course) == datetime(2027, 2, 15, 22, 14, 3, tzinfo=msk)
+    assert _parse_form_timestamp("2027-02-15 22:14:03", course) == datetime(2027, 2, 15, 22, 14, 3, tzinfo=msk)

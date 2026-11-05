@@ -177,7 +177,7 @@ def create_assignment(course: Course, aid: str, title: str) -> list[Path]:
     _write(pub / "README.md", README_PUBLIC.format(aid=aid, title=title, soft=soft.strftime("%d.%m.%Y %H:%M"), hard=hard.strftime("%d.%m.%Y %H:%M")), created)
     _write(pub / "starter" / "README.md", f"# {title}\n\nСм. условие в репозитории курса: `assignments/{aid}/README.md`.\n", created)
     _write(pub / "starter" / "requirements.txt", "pandas\nnumpy\nscikit-learn\njupyter\n", created)
-    _write(pub / "starter" / ".gitignore", "data/\n.ipynb_checkpoints/\n__pycache__/\n.grader/\n", created)
+    _write(pub / "starter" / ".gitignore", "data/\n.ipynb_checkpoints/\n__pycache__/\n.grader/\n.DS_Store\n", created)
     _write(pub / "starter" / "report.md", "# Отчёт\n\n_Ваши выводы здесь._\n", created)
     _write(pub / "starter" / ".github" / "workflows" / "ci.yml", STARTER_CI, created)
     _write(pub / "starter" / "tests_public" / "conftest.py", STARTER_CONFTEST, created)
